@@ -65,13 +65,21 @@ function getFieldKey(label) {
   }) || label;
 }
 
+function getIdKey(records) {
+  return Object.keys(records[0] || {})[0] || "";
+}
+
 function uniqueValues(records, key) {
   return [...new Set(records.map((r) => sanitize(r[key])).filter(Boolean))].sort();
 }
 
 function applyFilters(records) {
   return records.filter((r) =>
-    Object.entries(state.filters).every(([k, v]) => !v || sanitize(r[k]) === v)
+    Object.entries(state.filters).every(([k, v]) => {
+      if (!v) return true;
+      if (k === "__dimension") return true;
+      return String(sanitize(r[k])) === String(v);
+    })
   );
 }
 
@@ -112,7 +120,9 @@ function groupBy(records, key) {
 function buildFilters(records, dimensions) {
   const container = document.getElementById("filters");
   container.innerHTML = "";
+  const idKey = getIdKey(records);
   const defs = [
+    ...(idKey ? [{ key: idKey, label: "ID" }] : []),
     { key: getFieldKey(FIELD_MAP.plant), label: "Planta" },
     { key: getFieldKey(FIELD_MAP.personnel), label: "Tipo de personal" },
     { key: getFieldKey(FIELD_MAP.department), label: "Departamento" },
@@ -418,6 +428,9 @@ function render() {
   const filtered = applyFilters(all);
   const questionColumns = identifyQuestionColumns(all);
   const dimensions = identifyDimensionColumns(all);
+  const activeDimensions = state.filters.__dimension
+    ? dimensions.filter((d) => d === state.filters.__dimension)
+    : dimensions;
   const plantKey = getFieldKey(FIELD_MAP.plant);
   const personnelKey = getFieldKey(FIELD_MAP.personnel);
 
@@ -425,14 +438,14 @@ function render() {
     ? filtered.map((r) => ({ ...r, "__dimSelected": r[state.filters.__dimension] }))
     : filtered;
 
-  renderKPIs(subset, all, questionColumns, dimensions, plantKey, personnelKey);
-  renderPlantComparison(subset, questionColumns, dimensions, plantKey);
-  renderDimensions(subset, dimensions, plantKey);
-  renderPersonnel(subset, dimensions, plantKey, personnelKey);
+  renderKPIs(subset, all, questionColumns, activeDimensions, plantKey, personnelKey);
+  renderPlantComparison(subset, questionColumns, activeDimensions, plantKey);
+  renderDimensions(subset, activeDimensions, plantKey);
+  renderPersonnel(subset, activeDimensions, plantKey, personnelKey);
   renderCriticalQuestions(subset, questionColumns, plantKey, personnelKey);
-  renderPlantDetails(subset, dimensions, questionColumns, plantKey, personnelKey);
+  renderPlantDetails(subset, activeDimensions, questionColumns, plantKey, personnelKey);
   renderOpenComments(subset);
-  renderConclusions(subset, questionColumns, dimensions, plantKey);
+  renderConclusions(subset, questionColumns, activeDimensions, plantKey);
 }
 
 async function init() {
