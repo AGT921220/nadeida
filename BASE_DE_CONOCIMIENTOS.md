@@ -31,11 +31,12 @@ Proyecto de dashboard ejecutivo para analizar resultados de encuesta organizacio
 
 ### Flujo principal
 
-1. Se intenta cargar `data.json`.
-2. Si no existe o está vacío, se solicita cargar un `.xlsx`.
-3. Se normalizan columnas y se detectan campos numéricos.
-4. Se calculan métricas agregadas y se renderizan secciones.
-5. Los filtros recalculan KPIs, gráficas y tablas.
+1. Se intenta cargar primero una versión persistida en `localStorage` (si hubo carga previa de Excel).
+2. Si no hay persistencia local, se intenta cargar `data.json`.
+3. Si no existe o está vacío, se solicita cargar un `.xlsx`.
+4. Se normalizan columnas y se detectan campos numéricos.
+5. Se calculan métricas agregadas y se renderizan secciones.
+6. Los filtros recalculan KPIs, gráficas y tablas.
 
 ### Tecnologías detectadas
 
@@ -75,7 +76,11 @@ Proyecto de dashboard ejecutivo para analizar resultados de encuesta organizacio
 
 ### Qué hace
 
-Carga información desde `data.json` o desde Excel cargado manualmente por el usuario.
+Carga información desde:
+
+- datos persistidos localmente (último Excel cargado),
+- `data.json`,
+- o Excel cargado manualmente por el usuario.
 
 ### Rutas relacionadas
 
@@ -99,11 +104,17 @@ Carga información desde `data.json` o desde Excel cargado manualmente por el us
 
 ### Flujo paso a paso
 
-1. Intentar JSON.
-2. Fallback a carga Excel.
-3. Parsear hoja.
-4. Normalizar encabezados.
-5. Detectar columnas de análisis.
+1. Intentar lectura de `localStorage` (`nadeida.persistedSource.v1`).
+2. Si no hay persistencia, intentar `data.json`.
+3. Si no hay datos válidos, habilitar carga manual de Excel.
+4. Parsear hoja.
+5. Normalizar encabezados.
+6. Detectar columnas de análisis.
+7. Guardar el resultado en `localStorage` para persistencia en recarga.
+
+### Actualización de información
+
+Existe un apartado en dashboard para cargar un nuevo Excel y reemplazar los datos actuales sin recargar la app manualmente.
 
 ---
 

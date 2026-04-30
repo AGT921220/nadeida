@@ -36,6 +36,22 @@
       <div id="dashboardContent" class="d-none">
       <section class="card panel mb-4">
         <div class="card-body">
+          <h2 class="h5 mb-2">Actualizar información</h2>
+          <p class="text-muted mb-3">Carga un nuevo archivo Excel para reemplazar los datos actuales. La ultima carga queda guardada en este navegador.</p>
+          <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+              <label class="form-label small">Archivo .xlsx / .xls</label>
+              <input type="file" class="form-control" id="refreshExcelInput" accept=".xlsx,.xls" />
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-outline-primary w-100" id="refreshExcelBtn">Actualizar datos</button>
+            </div>
+          </div>
+          <div class="small mt-2" id="refreshStatus"></div>
+        </div>
+      </section>
+      <section class="card panel mb-4">
+        <div class="card-body">
           <h2 class="h5 mb-3">Filtros</h2>
           <div class="row g-3" id="filters"></div>
           <div class="small text-muted mt-2" id="lowSampleWarning"></div>

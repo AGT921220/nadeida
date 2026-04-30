@@ -32,6 +32,7 @@ const OPEN_TEXT_COLUMNS = [
   "¿Tienes alguna sugerencia para mejorar la comunicación dentro de la empresa?",
   "¿Qué ideas tienes para que el trabajo en equipo sea mejor?",
 ];
+const LOCAL_SOURCE_KEY = "nadeida.persistedSource.v1";
 
 function sanitize(v) {
   return typeof v === "string" ? v.trim() : v;
@@ -48,6 +49,29 @@ function isNumericLikert(v) {
 
 function getRecords() {
   return source?.records || [];
+}
+
+function persistSource(data) {
+  try {
+    localStorage.setItem(LOCAL_SOURCE_KEY, JSON.stringify(data));
+    return true;
+  } catch (err) {
+    console.warn("No se pudo persistir la información local:", err);
+    return false;
+  }
+}
+
+function loadPersistedSource() {
+  try {
+    const raw = localStorage.getItem(LOCAL_SOURCE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.records) || !parsed.records.length) return null;
+    return parsed;
+  } catch (err) {
+    console.warn("No se pudo leer la información persistida:", err);
+    return null;
+  }
 }
 
 function getFieldKey(label) {
@@ -454,6 +478,9 @@ async function init() {
   const uploadStatus = document.getElementById("uploadStatus");
   const excelInput = document.getElementById("excelInput");
   const loadExcelBtn = document.getElementById("loadExcelBtn");
+  const refreshExcelInput = document.getElementById("refreshExcelInput");
+  const refreshExcelBtn = document.getElementById("refreshExcelBtn");
+  const refreshStatus = document.getElementById("refreshStatus");
 
   function showUpload(message, isError = true) {
     uploadSection.classList.remove("d-none");
@@ -465,6 +492,12 @@ async function init() {
   function showDashboard() {
     uploadSection.classList.add("d-none");
     dashboardContent.classList.remove("d-none");
+  }
+
+  function setRefreshStatus(message, isError = false) {
+    if (!refreshStatus) return;
+    refreshStatus.textContent = message || "";
+    refreshStatus.className = `small mt-2 ${isError ? "error" : "ok"}`;
   }
 
   function sanitizeRecord(record) {
@@ -494,7 +527,7 @@ async function init() {
     });
   }
 
-  function loadFromWorkbook(workbook) {
+  function loadFromWorkbook(workbook, sourceFileName = "archivo-cargado-manualmente.xlsx") {
     const sheet = workbook.Sheets["Hoja1"] || workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error("No se encontró la hoja Hoja1.");
     const raw = XLSX.utils.sheet_to_json(sheet, { defval: null });
@@ -502,18 +535,25 @@ async function init() {
     if (!records.length) throw new Error("El archivo no contiene registros válidos.");
     source = {
       generatedAt: new Date().toISOString(),
-      sourceFile: "archivo-cargado-manualmente.xlsx",
+      sourceFile: sourceFileName,
       sheet: "Hoja1",
       questionColumns: inferQuestionColumns(records),
       dimensionColumns: DIMENSIONS_FALLBACK.filter((d) => records.some((r) => typeof r[d] === "number")),
       openTextColumns: OPEN_TEXT_COLUMNS.filter((c) => records.some((r) => typeof r[c] === "string" && r[c].trim())),
       records,
     };
+    const persisted = persistSource(source);
     state.filters = {};
     buildFilters(records, identifyDimensionColumns(records));
     render();
     showDashboard();
     uploadStatus.textContent = "";
+    setRefreshStatus(
+      persisted
+        ? `Datos actualizados desde "${sourceFileName}" y guardados localmente.`
+        : `Datos actualizados desde "${sourceFileName}". No se pudo guardar localmente.`,
+      !persisted
+    );
   }
 
   loadExcelBtn.addEventListener("click", async () => {
@@ -526,11 +566,41 @@ async function init() {
       showUpload("Procesando archivo, espera un momento...", false);
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
-      loadFromWorkbook(workbook);
+      loadFromWorkbook(workbook, file.name);
     } catch (err) {
       showUpload(`No se pudo procesar el archivo: ${err.message}`, true);
     }
   });
+
+  refreshExcelBtn?.addEventListener("click", async () => {
+    const file = refreshExcelInput?.files?.[0];
+    if (!file) {
+      setRefreshStatus("Selecciona un archivo Excel antes de actualizar.", true);
+      return;
+    }
+    try {
+      setRefreshStatus("Procesando archivo...", false);
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      loadFromWorkbook(workbook, file.name);
+      if (refreshExcelInput) refreshExcelInput.value = "";
+    } catch (err) {
+      setRefreshStatus(`No se pudo actualizar la información: ${err.message}`, true);
+    }
+  });
+
+  const persistedSource = loadPersistedSource();
+  if (persistedSource) {
+    source = persistedSource;
+    state.filters = {};
+    buildFilters(getRecords(), identifyDimensionColumns(getRecords()));
+    render();
+    showDashboard();
+    setRefreshStatus(
+      `Se cargaron datos guardados localmente (${persistedSource.sourceFile || "archivo Excel"}).`
+    );
+    return;
+  }
 
   try {
     const res = await fetch("data.json");
@@ -541,6 +611,7 @@ async function init() {
     buildFilters(records, identifyDimensionColumns(records));
     render();
     showDashboard();
+    setRefreshStatus("Datos cargados desde data.json. Puedes actualizar con un nuevo Excel.");
   } catch (e) {
     showUpload("No se encontró data.json válido. Puedes cargar un Excel para analizar.", true);
   }
