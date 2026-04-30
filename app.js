@@ -33,6 +33,9 @@ const OPEN_TEXT_COLUMNS = [
   "¿Qué ideas tienes para que el trabajo en equipo sea mejor?",
 ];
 const LOCAL_SOURCE_KEY = "nadeida.persistedSource.v1";
+const IDB_NAME = "nadeida-db";
+const IDB_STORE = "app-cache";
+const IDB_SOURCE_KEY = "persisted-source-v1";
 
 function sanitize(v) {
   return typeof v === "string" ? v.trim() : v;
@@ -51,27 +54,88 @@ function getRecords() {
   return source?.records || [];
 }
 
-function persistSource(data) {
+function openAppDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB no disponible"));
+      return;
+    }
+    const req = window.indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error("No se pudo abrir IndexedDB"));
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await openAppDb();
   try {
-    localStorage.setItem(LOCAL_SOURCE_KEY, JSON.stringify(data));
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error("Error guardando en IndexedDB"));
+      tx.objectStore(IDB_STORE).put(value, key);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function idbGet(key) {
+  const db = await openAppDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => reject(req.error || new Error("Error leyendo IndexedDB"));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function persistSource(data) {
+  const serialized = JSON.stringify(data);
+  try {
+    localStorage.setItem(LOCAL_SOURCE_KEY, serialized);
     return true;
   } catch (err) {
-    console.warn("No se pudo persistir la información local:", err);
+    console.warn("localStorage lleno o no disponible, usando IndexedDB:", err);
+  }
+  try {
+    await idbSet(IDB_SOURCE_KEY, serialized);
+    return true;
+  } catch (err) {
+    console.warn("No se pudo persistir la información local en IndexedDB:", err);
     return false;
   }
 }
 
-function loadPersistedSource() {
+async function loadPersistedSource() {
   try {
     const raw = localStorage.getItem(LOCAL_SOURCE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.records) && parsed.records.length) return parsed;
+    }
+  } catch (err) {
+    console.warn("No se pudo leer localStorage persistido:", err);
+  }
+  try {
+    const raw = await idbGet(IDB_SOURCE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.records) || !parsed.records.length) return null;
-    return parsed;
+    if (parsed && Array.isArray(parsed.records) && parsed.records.length) return parsed;
   } catch (err) {
-    console.warn("No se pudo leer la información persistida:", err);
-    return null;
+    console.warn("No se pudo leer IndexedDB persistido:", err);
   }
+  return null;
 }
 
 function getFieldKey(label) {
@@ -527,7 +591,7 @@ async function init() {
     });
   }
 
-  function loadFromWorkbook(workbook, sourceFileName = "archivo-cargado-manualmente.xlsx") {
+  async function loadFromWorkbook(workbook, sourceFileName = "archivo-cargado-manualmente.xlsx") {
     const sheet = workbook.Sheets["Hoja1"] || workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error("No se encontró la hoja Hoja1.");
     const raw = XLSX.utils.sheet_to_json(sheet, { defval: null });
@@ -542,7 +606,7 @@ async function init() {
       openTextColumns: OPEN_TEXT_COLUMNS.filter((c) => records.some((r) => typeof r[c] === "string" && r[c].trim())),
       records,
     };
-    const persisted = persistSource(source);
+    const persisted = await persistSource(source);
     state.filters = {};
     buildFilters(records, identifyDimensionColumns(records));
     render();
@@ -566,7 +630,7 @@ async function init() {
       showUpload("Procesando archivo, espera un momento...", false);
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
-      loadFromWorkbook(workbook, file.name);
+      await loadFromWorkbook(workbook, file.name);
     } catch (err) {
       showUpload(`No se pudo procesar el archivo: ${err.message}`, true);
     }
@@ -582,14 +646,14 @@ async function init() {
       setRefreshStatus("Procesando archivo...", false);
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
-      loadFromWorkbook(workbook, file.name);
+      await loadFromWorkbook(workbook, file.name);
       if (refreshExcelInput) refreshExcelInput.value = "";
     } catch (err) {
       setRefreshStatus(`No se pudo actualizar la información: ${err.message}`, true);
     }
   });
 
-  const persistedSource = loadPersistedSource();
+  const persistedSource = await loadPersistedSource();
   if (persistedSource) {
     source = persistedSource;
     state.filters = {};

@@ -116,6 +116,12 @@ Carga información desde:
 
 Existe un apartado en dashboard para cargar un nuevo Excel y reemplazar los datos actuales sin recargar la app manualmente.
 
+### Persistencia técnica (actualizada)
+
+- Primera opción: `localStorage` (`nadeida.persistedSource.v1`).
+- Fallback para archivos grandes: `IndexedDB` (`nadeida-db` / `app-cache`).
+- Al iniciar, la app intenta recuperar primero desde `localStorage` y, si no existe, desde `IndexedDB`.
+
 ---
 
 ## Módulo: Filtros interactivos
